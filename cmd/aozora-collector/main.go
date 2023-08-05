@@ -29,8 +29,20 @@ func findEntries(siteURL string) ([]Entry, error) {
 		}
 		paegURL := fmt.Sprintf("https://www.aozora.gr.jp/cards/%s/card%s.html", token[1], token[2])
 		println(pageURL)
+		author, zipURL := findAuthorAndZIP(pageURL)
+		println(zipURL)
 	}
 	// return nil, nil
+}
+
+func findAuthorAndZIP(siteURL string) (string, string) {
+	doc, err := goquery.NewDocument(siteURL)
+	if err != nil {
+		return "", ""
+	}
+
+	zipURL := ""
+	return zipURL
 }
 
 func main() {
