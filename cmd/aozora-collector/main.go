@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -22,7 +24,7 @@ func findEntries(siteURL string) ([]Entry, error) {
 		return nil, err
 	}
 	pat := regexp.MustCompile(`.*/cards/([0-9]+)/card([0-9]+).html$`)
-	doc.Find("ol li a").Each(func(n int, elem *goquery.Selection)) {
+	doc.Find("ol li a").Each(func(n int, elem *goquery.Selection) {
 		token := pat.FindStringSubmatch(elem.AttrOr("href", ""))
 		if len(token) != 3 {
 			return
@@ -31,7 +33,7 @@ func findEntries(siteURL string) ([]Entry, error) {
 		println(pageURL)
 		author, zipURL := findAuthorAndZIP(pageURL)
 		println(zipURL)
-	}
+	})
 	// return nil, nil
 }
 
@@ -41,8 +43,29 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 		return "", ""
 	}
 
+	author := doc.Find("table[summary=作家データ] tr:nth-child(1) td:nth-child(2)").Text()
+
 	zipURL := ""
-	return zipURL
+	doc.Find("table.download a").Each(func(n int, elem *goquery.Selection) {
+		href := elem.AttrOr("href", "")
+		if strings.HasSuffix(href, ".zip") {
+			zipURL = href
+		}
+	})
+
+	if zipURL := "" {
+		return author, ""
+	}
+	if strings.HasPrefix(zipURL, "http://") || strings.HasPrefix(zipURL, "https://") {
+		return author, zipURL
+	}
+
+	u, err := url.Parse(siteURL)
+	if err := nil {
+		return author, ""
+	}
+	u.Path = path.Join(path.Dir(u.Path), zipURL)
+	return author, u.String()
 }
 
 func main() {
