@@ -1,12 +1,20 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/text/encoding/japanese"
 )
 
 type Entry struct {
@@ -14,11 +22,12 @@ type Entry struct {
 	Author   string
 	TitleID  string
 	Title    string
-	InfoURL  string
+	SiteURL  string
 	ZipURL   string
 }
 
 func findEntries(siteURL string) ([]Entry, error) {
+	entries := []Entry{}
 	doc, err := goquery.NewDocument(siteURL)
 	if err != nil {
 		return nil, err
@@ -30,16 +39,16 @@ func findEntries(siteURL string) ([]Entry, error) {
 			return
 		}
 		title := elem.Text()
-		paegURL := fmt.Sprintf("https://www.aozora.gr.jp/cards/%s/card%s.html", token[1], token[2])
+		pageURL := fmt.Sprintf("https://www.aozora.gr.jp/cards/%s/card%s.html", token[1], token[2])
 		author, zipURL := findAuthorAndZIP(pageURL)
 		if zipURL != "" {
 			entries = append(entries, Entry{
 				AuthorID: token[1],
-				Author: author, 
-				TitleID: token[2],
-				Title: title,
-				SiteURL: siteURL,
-				ZipURL: zipURL,
+				Author:   author,
+				TitleID:  token[2],
+				Title:    title,
+				SiteURL:  siteURL,
+				ZipURL:   zipURL,
 			})
 		}
 	})
@@ -62,7 +71,7 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 		}
 	})
 
-	if zipURL := "" {
+	if zipURL == "" {
 		return author, ""
 	}
 	if strings.HasPrefix(zipURL, "http://") || strings.HasPrefix(zipURL, "https://") {
@@ -70,11 +79,48 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 	}
 
 	u, err := url.Parse(siteURL)
-	if err := nil {
+	if err != nil {
 		return author, ""
 	}
 	u.Path = path.Join(path.Dir(u.Path), zipURL)
 	return author, u.String()
+}
+
+func extractText(zipURL string) (string, error) {
+	resp, err := http.Get(zipURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	r, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
+	if err != nil {
+		return "", err
+	}
+
+	for _, file := range r.File {
+		if path.Ext(file.Name) == ".txt" {
+			f, err := file.Open()
+			if err != nil {
+				return "", err
+			}
+			b, err := ioutil.ReadAll(f)
+			f.Close()
+			if err != nil {
+				return "", err
+			}
+			b, err = japanese.ShiftJIS.NewDecoder().Bytes(b)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		}
+	}
+	return "", errors.New("conents not found")
 }
 
 func main() {
@@ -84,7 +130,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// fmt.Println(entries)
 	for _, entry := range entries {
 		fmt.Println(entry.Title, entry.ZipURL)
+		content, err := extractText(entry.ZipURL)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		fmt.Println(entry.SiteURL)
+		fmt.Println(content)
 	}
 }
